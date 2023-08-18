@@ -1,5 +1,5 @@
 {-
-  TASK 2 - Matrix multiplier
+  TAScounter3 2 - Matrix multiplier
   Write the method that multiplies one matrix by another.
   The 1st and 2nd parameter of the function will contain
   a matrix implemented using tuples (eg: [[1,2], [3,4]]).
@@ -12,34 +12,34 @@
 () recv_internal() {
 }
 
-(int) tlen (tuple t) asm "TLEN";
-
-
-
 ;; testable
+(int) tlen (tuple t) asm "TLEN";
 (tuple) matrix_multiplier(tuple matrixA, tuple matrixB) method_id {
-  int n = matrixA.tlen();
-  int p = matrixB.first().tlen();
-  int m = matrixA.first().tlen();
-
-  tuple matrixC = empty_tuple();
-  int i = 0;
-  while (i < n) {
-    int j = 0;
-    tuple newRow = empty_tuple();
-    while (j < p) {
-      int k = 0;
-      int newEntry = 0;
-      while (k < m) {
-        newEntry += matrixA.at(i).at(k) * matrixB.at(k).at(j);
-        k += 1;
-      }
-      newRow~tpush(newEntry);
-      j += 1;
-    }
-    matrixC~tpush(newRow);
-    i += 1;
+  int a_rows = matrixA.tlen();
+  int b_rows = matrixB.tlen();
+  int a_cols = matrixA.at(0).tlen();
+  int b_cols = matrixB.at(0).tlen();
+  if (b_rows != a_cols){
+    return empty_tuple();
   }
-  
-  return matrixC;
+  tuple res = empty_tuple();
+  int counter1 = 0;
+  while ( counter1 < a_rows ) {
+    tuple rows_t = empty_tuple();
+    int counter2 = 0;
+    while (counter2 < b_cols) {
+      int cell_val = 0;
+      int counter3 = 0;
+      while (counter3 < a_cols){
+        cell_val += matrixA.at(counter1).at(counter3) * matrixB.at(counter3).at(counter2);
+        counter3 += 1;
+      }
+      rows_t~tpush(cell_val);
+      counter2 += 1;
+    }
+    res~tpush(rows_t);
+    counter1 += 1;
+  }
+  return res;
 }
+
