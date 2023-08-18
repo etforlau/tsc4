@@ -19,152 +19,139 @@
 
 () recv_internal() {
 }
+
 forall X -> int is_null (X x) asm "ISNULL";
 forall X -> (tuple, ()) push_back (tuple tail, X head) asm "CONS";
 forall X -> (tuple, (X)) pop_back (tuple t) asm "UNCONS";
 forall X -> (tuple, X) ~tpop (tuple t) asm "TPOP"; 
 forall X -> (tuple, X) list_next(tuple list) asm( -> 1 0) "UNCONS";
 forall X -> tuple cons(X head, tuple tail) asm "CONS";
+tuple cdr(tuple list) asm "CDR";
 (int) ubitsize (int a) asm "UBITSIZE";
 
-(int, int) SeparateBits(int num, int len1, int len2){
-    int first_bit_mask = ( 1 << len1 ) - 1;
-    int second_bits_mask = ( 1 << len2 ) - 1;
-    int part1 = ( num >> len2 ) & first_bit_mask;
-    int part2 = num & second_bits_mask;
-    return  (part1, part2);
-}
-
-
-global builder b;
-global int RemainingBits;
-
-(tuple, int) AddBits(tuple stack_res, int lenStack, int newBits, int len){
-    ;;builder b = stack_res~list_next();
-    ;;int ReamainingBits = 1023 - b.builder_bits();
-    if ( RemainingBits >= len ){
-        b~store_uint(newBits, len);
-        RemainingBits -= len; 
-        ;;    stack_res = b.cons(stack_res);
-    } else {
-        int n1 = 0;
-        int n2 = 0;
-        (n1, n2) = SeparateBits(newBits,RemainingBits, len - RemainingBits);
-        b~store_uint(n1, RemainingBits);
-        stack_res = b.cons(stack_res);
-        b = begin_cell().store_uint(n2, len - RemainingBits);
-        ;;RemBits = 1023 - (len - RemBits)
-        RemainingBits += 1023 - len;
-        ;;builder newBuilder = begin_cell().store_uint(n2, len - ReamainingBits);
-        ;;stack_res = newBuilder.cons(stack_res);
-        lenStack += 1;
-    }
-    return (stack_res , lenStack);
-}
-
-
-
-tuple cdr(tuple list) asm "CDR";
-(cell) find_and_replace(int flag, int value, cell linked_list) method_id {
-    ;; ~dump(value);
-    tuple stack_res = null();
-    ;;builder bldr = begin_cell();
-    ;;stack_res = begin_cell().cons(stack_res);
-    int StackLen = 0;
-    tuple stack = null();
-    int flag_length = ubitsize(flag);
-    int value_length = ubitsize(value);
-    
-    stack~push_back(linked_list);
-    slice prev_slice = begin_cell().end_cell().begin_parse();
-
-    b = begin_cell();
-    RemainingBits = 1023;
-
-
-    while (~ stack.is_null()) {
-      slice curr_slice = stack~pop_back().begin_parse();
-      
-      if (curr_slice.slice_refs()) {
-        stack~push_back(curr_slice~load_ref());
-      }
-      
-      int curr_processed = 0;
-      int prev_processed = 0;
-      int curr_slice_size = curr_slice.slice_bits();
-      int prev_slice_size = prev_slice.slice_bits();
-      
-      while (~ curr_slice.slice_empty?()) {
-
-        while (~ prev_slice.slice_empty?()) {
-          int prev_read = prev_slice.preload_uint(prev_slice_size - prev_processed);
-          int read_curr = curr_slice.preload_uint(flag_length - (prev_slice_size - prev_processed));
-          
-          int read = (prev_read << ( flag_length - (prev_slice_size - prev_processed) ) ) + read_curr;
-          
-          if (read == flag){
-            prev_slice~skip_bits(prev_slice_size - prev_processed);
-            curr_slice~skip_bits(flag_length - (prev_slice_size - prev_processed));
-            
-            curr_processed += (flag_length - (prev_slice_size - prev_processed));
-
-            (stack_res, StackLen) = AddBits(stack_res, StackLen, value, value_length);
-          } else {
-            prev_processed += 1;
-            
-            (stack_res, StackLen) = AddBits(stack_res, StackLen, prev_slice~load_uint(1), 1);
-          }
-        }
-                  
-        if (flag_length <= curr_slice_size - curr_processed){
-          int read = curr_slice.preload_uint(flag_length);
-          
-          if (read == flag){
-            curr_processed += flag_length;
-            curr_slice~skip_bits(flag_length);
-
-            (stack_res, StackLen) = AddBits(stack_res, StackLen, value, value_length);
-          } else {
-            curr_processed += 1;
-            
-            (stack_res, StackLen) = AddBits(stack_res, StackLen, curr_slice~load_uint(1), 1);
-          }
+(int, int) containsFlag(slice FlagSlice, slice current_slice){
+    if (current_slice.slice_bits() >= FlagSlice.slice_bits()){
+        slice ToCheck = current_slice.preload_bits(FlagSlice.slice_bits());
+        if (ToCheck.preload_uint(ToCheck.slice_bits()) == FlagSlice.preload_uint(FlagSlice.slice_bits())){
+            return (1 , 0);
         } else {
-          prev_slice = curr_slice;
-          curr_slice~skip_bits(curr_slice_size - curr_processed);
+            return (0, 0);
         }
-      }
-    }
-    
-    int prev_slice_size = prev_slice.slice_bits();
-    if (prev_slice_size != 0){
-      (stack_res, StackLen) = AddBits(stack_res, StackLen, prev_slice~load_uint(prev_slice_size), prev_slice_size);
-    }
+    } else {
+        if (current_slice.slice_refs() != 0){
+            slice next = current_slice~load_ref().begin_parse();
+            if ( next.slice_bits() >= FlagSlice.slice_bits() - current_slice.slice_bits()){
+                slice Part1 = current_slice.preload_bits(current_slice.slice_bits());
+                slice Part2 = next.preload_bits(FlagSlice.slice_bits() - current_slice.slice_bits());
+                slice ToCheck = begin_cell().store_slice(Part1).store_slice(Part2).end_cell().begin_parse();
+                if (ToCheck.preload_uint(ToCheck.slice_bits()) == FlagSlice.preload_uint(FlagSlice.slice_bits())){
+                    return (1, 0);
+                } else {
+                    return (0, 0);
+                }
+            } else {
+                return (0, 1);
+            }
 
-    if (b.builder_bits() != 0){
-        stack_res = b.cons(stack_res);
-        StackLen += 1;
+        } else {
+            return (0 , 1);
+        }
     }
-    if (StackLen  == 0){
+}
+
+(cell) find_and_replace(int flag, int value, cell linked_list) method_id {
+    if(cell_null?(linked_list)) {
         return begin_cell().end_cell();
     }
-    
-    cell temp = null();
-    if (StackLen == 1){
-        builder bldr = stack_res~list_next();
-        cell result = bldr.end_cell();
-        return result;
-    }
-    while (StackLen != 1){
-        StackLen -= 1;
-        if (temp.is_null()) {
-            temp = stack_res~list_next().end_cell();
-        } else {
-            cell newCell = stack_res~list_next().store_ref(temp).end_cell();
-            temp = newCell;
-        }
-    }
-    cell result = stack_res~list_next().store_ref(temp).end_cell();
 
+    int flag_len = ubitsize(flag);
+    int val_len = ubitsize(value);
+    if (flag == 0){
+        flag_len = 1;
+    }
+    if (value == 0){
+        val_len = 1;
+    }
+    slice flag_sl = begin_cell().store_uint(flag, flag_len).end_cell().begin_parse();
+    slice val_sl = begin_cell().store_uint(value, val_len).end_cell().begin_parse();
+
+    slice current_slice = linked_list.begin_parse();
+    if (current_slice.slice_bits() < flag_len){
+        return linked_list;
+    }
+    tuple stack_res = null();
+    int isFlag = 0;
+    int ReadAllSlice = 0;
+
+    builder curr_cell = begin_cell();
+    while (~ current_slice.slice_empty?()){
+        (isFlag, ReadAllSlice) = containsFlag(flag_sl   ,current_slice);
+        if (isFlag == 1){
+            if (1023 - curr_cell.builder_bits() >= val_len){
+                curr_cell = curr_cell.store_slice(val_sl);
+            } else {
+                stack_res = curr_cell.end_cell().cons(stack_res);
+                curr_cell = begin_cell().store_slice(val_sl);
+            }
+            if (current_slice.slice_bits() >= flag_len){
+                current_slice~skip_bits(flag_len);
+            } else {
+                if (current_slice.slice_refs() != 0){
+                    slice next = current_slice~load_ref().begin_parse();
+                    next~skip_bits(flag_len - current_slice.slice_bits());
+                    current_slice = next;
+                } else {
+                    current_slice~skip_bits(current_slice.slice_bits());
+                }
+            }
+        } else {
+            if (ReadAllSlice == 0){
+                if (current_slice.slice_bits() > 0){
+                    if (1023 - curr_cell.builder_bits() > 0){
+                        curr_cell = curr_cell.store_slice(current_slice~load_bits(1));
+                    } else {
+                        stack_res = curr_cell.end_cell().cons(stack_res);
+                        curr_cell = begin_cell().store_slice(current_slice~load_bits(1));
+                    }
+                } else {
+                    if (current_slice.slice_refs() != 0){
+                        current_slice = current_slice~load_ref().begin_parse();
+                        if (1023 - curr_cell.builder_bits() > 0){
+                            curr_cell = curr_cell.store_slice(current_slice~load_bits(1));
+                        } else {
+                            stack_res = curr_cell.end_cell().cons(stack_res);
+                            curr_cell = begin_cell().store_slice(current_slice~load_bits(1));
+                        }
+                    } else {
+                        stack_res = curr_cell.end_cell().cons(stack_res);
+                    }
+                }
+            } else {
+                if (1023 - curr_cell.builder_bits() >= current_slice.slice_bits()){
+                    curr_cell = curr_cell.store_slice(current_slice~load_bits(current_slice.slice_bits()));
+                } else {
+                    stack_res = curr_cell.end_cell().cons(stack_res);
+                    curr_cell = begin_cell().store_slice(current_slice~load_bits(current_slice.slice_bits()));
+                }
+                if (current_slice.slice_refs() != 0){
+                    current_slice = current_slice~load_ref().begin_parse();
+                }
+            }
+        }
+
+    }
+    
+    if (curr_cell.builder_bits() != 0){
+        stack_res = curr_cell.end_cell().cons(stack_res);
+    }
+    
+    cell result = stack_res~list_next();
+    while (~ stack_res.is_null()){
+        result = begin_cell().store_slice(stack_res~list_next().begin_parse())
+        .store_ref(result).end_cell();
+    }
     return result;
+
+
+    
 }
