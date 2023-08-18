@@ -8,25 +8,29 @@
 
 () recv_internal() {
 }
-;; testable
+
 forall X -> int is_null (X x) asm "ISNULL";
 forall X -> (tuple, ()) push_back (tuple tail, X head) asm "CONS";
 forall X -> (tuple, (X)) pop_back (tuple t) asm "UNCONS";
+
+;; testable
 (cell) find_branch_by_hash(int hash, cell tree) method_id {
+
   tuple stack = null();
   stack~push_back(tree);
   while (~ stack.is_null()) {
-    cell node = stack~pop_back();
-        
-    if (node.cell_hash() == hash){
-      return node;
+    cell c = stack~pop_back();
+
+    if(hash == c.cell_hash()) {
+      return c;
     }
 
-    slice s = node.begin_parse();
-        
+    slice s = c.begin_parse();
+
     repeat (s.slice_refs()) {
       stack~push_back(s~load_ref());
     }
   }
+
   return begin_cell().end_cell();
 }

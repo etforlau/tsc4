@@ -25,109 +25,120 @@ forall X -> (tuple, (X)) pop_back (tuple t) asm "UNCONS";
 forall X -> (tuple, X) ~tpop (tuple t) asm "TPOP"; 
 forall X -> (tuple, X) list_next(tuple list) asm( -> 1 0) "UNCONS";
 forall X -> tuple cons(X head, tuple tail) asm "CONS";
-tuple cdr(tuple list) asm "CDR";
 (int) ubitsize (int a) asm "UBITSIZE";
+
+(int, int) SeparateBits(int num, int len1, int len2){
+    int first_bit_mask = ( 1 << len1 ) - 1;
+    int second_bits_mask = ( 1 << len2 ) - 1;
+    int part1 = ( num >> len2 ) & first_bit_mask;
+    int part2 = num & second_bits_mask;
+    return  (part1, part2);
+}
 
 
 global builder b;
 global int RemainingBits;
 
 (tuple, int) AddBits(tuple stack_res, int lenStack, int newBits, int len){
-
+    ;;builder b = stack_res~list_next();
+    ;;int ReamainingBits = 1023 - b.builder_bits();
     if ( RemainingBits >= len ){
         b~store_uint(newBits, len);
         RemainingBits -= len; 
-
+        ;;    stack_res = b.cons(stack_res);
     } else {
+        int n1 = 0;
+        int n2 = 0;
+        (n1, n2) = SeparateBits(newBits,RemainingBits, len - RemainingBits);
+        b~store_uint(n1, RemainingBits);
         stack_res = b.cons(stack_res);
-        b = begin_cell().store_uint(newBits, len);
-
-        RemainingBits = 1023 - len;
+        b = begin_cell().store_uint(n2, len - RemainingBits);
+        ;;RemBits = 1023 - (len - RemBits)
+        RemainingBits += 1023 - len;
+        ;;builder newBuilder = begin_cell().store_uint(n2, len - ReamainingBits);
+        ;;stack_res = newBuilder.cons(stack_res);
         lenStack += 1;
     }
     return (stack_res , lenStack);
 }
 
+
+
+tuple cdr(tuple list) asm "CDR";
 (cell) find_and_replace(int flag, int value, cell linked_list) method_id {
     ;; ~dump(value);
     tuple stack_res = null();
-
+    ;;builder bldr = begin_cell();
+    ;;stack_res = begin_cell().cons(stack_res);
     int StackLen = 0;
     tuple stack = null();
-    int lenFlag = ubitsize(flag);
-    int lenValue = ubitsize(value);
-    if( flag == 0){
-        lenFlag = 1;
-    }
-    if ( value == 0){
-        lenValue = 1;
-    }
-
+    int flag_length = ubitsize(flag);
+    int value_length = ubitsize(value);
+    
     stack~push_back(linked_list);
-    slice prevBlock = begin_cell().end_cell().begin_parse();
+    slice prev_slice = begin_cell().end_cell().begin_parse();
 
     b = begin_cell();
     RemainingBits = 1023;
 
 
     while (~ stack.is_null()) {
-        slice s = stack~pop_back().begin_parse();
-        
-        repeat (s.slice_refs()) {
-            stack~push_back(s~load_ref());
-        }
-        
-        int bitNum = 0;
-        int maxLen = s.slice_bits();
-        int sizePrev = prevBlock.slice_bits();
-        int BitNumprev = 0;
-        while (~ s.slice_empty?() ){
-                   
-            while (~ prevBlock.slice_empty?()){ ;;reading prev block
-                int readPrev = prevBlock.preload_uint(sizePrev - BitNumprev);
-                int readNew = s.preload_uint(lenFlag - (sizePrev - BitNumprev));
-                int read = (readPrev << ( lenFlag - (sizePrev - BitNumprev) ) ) + readNew;
-                if (read == flag){
-                    prevBlock~skip_bits(sizePrev - BitNumprev);
-                    s~skip_bits(lenFlag - (sizePrev - BitNumprev));
-                    bitNum += (lenFlag - (sizePrev - BitNumprev));
+      slice curr_slice = stack~pop_back().begin_parse();
+      
+      if (curr_slice.slice_refs()) {
+        stack~push_back(curr_slice~load_ref());
+      }
+      
+      int curr_processed = 0;
+      int prev_processed = 0;
+      int curr_slice_size = curr_slice.slice_bits();
+      int prev_slice_size = prev_slice.slice_bits();
+      
+      while (~ curr_slice.slice_empty?()) {
 
-                    (stack_res, StackLen) = AddBits(stack_res,StackLen,value,lenValue);
-                } else {
-                    BitNumprev += 1;
-                    (stack_res, StackLen) = AddBits(stack_res, StackLen, prevBlock~load_uint(1) ,1);
-                }
-            }
+        while (~ prev_slice.slice_empty?()) {
+          int prev_read = prev_slice.preload_uint(prev_slice_size - prev_processed);
+          int read_curr = curr_slice.preload_uint(flag_length - (prev_slice_size - prev_processed));
+          
+          int read = (prev_read << ( flag_length - (prev_slice_size - prev_processed) ) ) + read_curr;
+          
+          if (read == flag){
+            prev_slice~skip_bits(prev_slice_size - prev_processed);
+            curr_slice~skip_bits(flag_length - (prev_slice_size - prev_processed));
             
-            if (maxLen - bitNum >= lenFlag){;; reading new block
-                int read = s.preload_uint(lenFlag);
-                
-                if (read == flag){
-                    bitNum += lenFlag;
-                    s~skip_bits(lenFlag);
+            curr_processed += (flag_length - (prev_slice_size - prev_processed));
 
-                    (stack_res, StackLen) = AddBits(stack_res, StackLen ,value,lenValue);
-                    
-                } else {
-                    bitNum += 1;
-
-                    
-                    (stack_res, StackLen) = AddBits(stack_res, StackLen, s~load_uint(1) ,1);
-                }
-                
-            } else { ;;block cant be read till end, leaving it for nex cycle
-                
-                prevBlock = s;
-                s~skip_bits(maxLen - bitNum);
-            }
-
+            (stack_res, StackLen) = AddBits(stack_res, StackLen, value, value_length);
+          } else {
+            prev_processed += 1;
+            
+            (stack_res, StackLen) = AddBits(stack_res, StackLen, prev_slice~load_uint(1), 1);
+          }
         }
-        
+                  
+        if (flag_length <= curr_slice_size - curr_processed){
+          int read = curr_slice.preload_uint(flag_length);
+          
+          if (read == flag){
+            curr_processed += flag_length;
+            curr_slice~skip_bits(flag_length);
+
+            (stack_res, StackLen) = AddBits(stack_res, StackLen, value, value_length);
+          } else {
+            curr_processed += 1;
+            
+            (stack_res, StackLen) = AddBits(stack_res, StackLen, curr_slice~load_uint(1), 1);
+          }
+        } else {
+          prev_slice = curr_slice;
+          curr_slice~skip_bits(curr_slice_size - curr_processed);
+        }
+      }
     }
-    int sizePrev = prevBlock.slice_bits();
-    if (sizePrev != 0){
-        ;;int t = prevBlock~load_uint(sizePrev);
-        (stack_res, StackLen) = AddBits(stack_res, StackLen ,prevBlock~load_uint(sizePrev) , sizePrev);
+    
+    int prev_slice_size = prev_slice.slice_bits();
+    if (prev_slice_size != 0){
+      (stack_res, StackLen) = AddBits(stack_res, StackLen, prev_slice~load_uint(prev_slice_size), prev_slice_size);
     }
 
     if (b.builder_bits() != 0){
@@ -155,6 +166,5 @@ global int RemainingBits;
     }
     cell result = stack_res~list_next().store_ref(temp).end_cell();
 
- 
     return result;
 }
