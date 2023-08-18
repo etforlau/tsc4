@@ -4,7 +4,8 @@
   first chunk stored to the root cell, next one to the cell in ref and so on;
   each cell can have only one ref. 
   Write the method that find and replaces one flags in the binary string
-  with another value. Flags and values can be can be of any length, but
+  with another va
+  lue. Flags and values can be can be of any length, but
   strictly up to 128 bits. The method must replace every flag it finds.
   Flag and the value to be replaced is guaranteed to be greater than 0.
   Lets give a simple example. We have the target flag 101110101 and the value
@@ -13,143 +14,147 @@
   starts with 10101000111111...
   The output should be a linked list where the first
   cell ends with ...10100001111, and the second cell starts with 11111000111111...
+
 -}
 
 () recv_internal() {
 }
-
+forall X -> int is_null (X x) asm "ISNULL";
+forall X -> (tuple, ()) push_back (tuple tail, X head) asm "CONS";
+forall X -> (tuple, (X)) pop_back (tuple t) asm "UNCONS";
+forall X -> (tuple, X) ~tpop (tuple t) asm "TPOP"; 
+forall X -> (tuple, X) list_next(tuple list) asm( -> 1 0) "UNCONS";
+forall X -> tuple cons(X head, tuple tail) asm "CONS";
+tuple cdr(tuple list) asm "CDR";
 (int) ubitsize (int a) asm "UBITSIZE";
 
-;; testable
+
+global builder b;
+global int RemainingBits;
+
+(tuple, int) AddBits(tuple stack_res, int lenStack, int newBits, int len){
+
+    if ( RemainingBits >= len ){
+        b~store_uint(newBits, len);
+        RemainingBits -= len; 
+
+    } else {
+        stack_res = b.cons(stack_res);
+        b = begin_cell().store_uint(newBits, len);
+
+        RemainingBits = 1023 - len;
+        lenStack += 1;
+    }
+    return (stack_res , lenStack);
+}
+
 (cell) find_and_replace(int flag, int value, cell linked_list) method_id {
-  int flag_length = ubitsize(flag);
-  int value_length = ubitsize(value);
-  slice current_s = linked_list.begin_parse();
-  int s_size = slice_bits(current_s);
-  builder result = begin_cell();
-  int to_skip = flag_length;
-  slice remainder_s = begin_cell().end_cell().begin_parse();
-  builder current_cell = begin_cell();
-  int pushed_to_cell = 0;
+    ;; ~dump(value);
+    tuple stack_res = null();
 
-  ;; convert value to string for writing by 1 bit
-  builder value_b = begin_cell();
-  tuple chars = null();
-  int value_copy = value;
-
-  ;; convert value to string
-  do {
-    int r = value_copy~divmod(10);
-    chars = cons(r + 48, chars);
-  } until (value_copy == 0);
-  do {
-    int char = chars~list_next();
-    value_b~store_uint(char, 8);
-  } until (null?(chars));
-  slice value_str = value_b.end_cell().begin_parse();
-
-  ;; Replace while current slice is not the last one
-  while(~ current_s.slice_refs_empty?()) {
-    int preloaded_int = 0;
-
-    ;; if there is no flag at the very end of chunk, we can switch to another
-    if (to_skip == s_size + 1) {
-      current_s = current_s~load_ref().begin_parse();
-      s_size = slice_bits(current_s);
-      to_skip = 0;
+    int StackLen = 0;
+    tuple stack = null();
+    int lenFlag = ubitsize(flag);
+    int lenValue = ubitsize(value);
+    if( flag == 0){
+        lenFlag = 1;
     }
-    ;; if there was a flag near the end of chunk, we save everything that has left, but is shorter than flag and go to next chunk
-    if(to_skip > s_size) {
-      to_skip -= s_size;
-      remainder_s = begin_cell()
-      .store_uint(current_s.skip_bits(s_size).preload_uint(flag_length - to_skip), flag_length - to_skip)
-      .end_cell()
-      .begin_parse();
-      current_s = current_s~load_ref().begin_parse();
-      s_size = slice_bits(current_s);
+    if ( value == 0){
+        lenValue = 1;
     }
 
-    ;; if we have something from previous chunk, we'll check it
-    if(slice_data_empty?(remainder_s)) {
-      preloaded_int = current_s.skip_bits(to_skip).preload_uint(flag_length);
-    }
-    else {
-      int remainder_size = slice_bits(remainder_s);
-      slice preloaded_s = begin_cell()
-      .store_uint(remainder_s.skip_bits(remainder_size).preload_uint(flag_length - to_skip), remainder_size)
-      .store_uint(current_s.skip_bits(to_skip).preload_uint(to_skip), to_skip)
-      .end_cell().begin_parse();
-      preloaded_int = preloaded_s.skip_bits(flag_length).preload_uint(flag_length);
-    }
+    stack~push_back(linked_list);
+    slice prevBlock = begin_cell().end_cell().begin_parse();
 
-    ;; choose data for writing    
-    slice written_value = begin_cell().end_cell().begin_parse();
-    int written_size = 0;
+    b = begin_cell();
+    RemainingBits = 1023;
 
-    if(preloaded_int == flag) {
-      written_value = value_str;
-      written_size = value_length;
-      to_skip += flag_length;
-    }
-    else {
-      builder preloaded_b = begin_cell();
-      do {
-        int r = preloaded_int~divmod(10);
-        chars = cons(r + 48, chars);
-      } until (preloaded_int == 0);
-      do {
-        int char = chars~list_next();
-        preloaded_b~store_uint(char, 8);
-      } until (null?(chars));
-      written_value = preloaded_b.end_cell().begin_parse();
-      written_size = flag_length;      
-      to_skip += 1;
-    }
 
-    ;; write down result of finding and replacement by bit
-    int counter = 1;
-    while(counter <= written_size) {
-      ;; if current cell is not full, write into it; in other case add full cell to result list, create new cell and add to it
-      if (pushed_to_cell < 1016) {
-        current_cell.store_uint(written_value.skip_bits(counter).preload_uint(1), 1);
-      }
-      else {
-        if(builder_bits(result) == 0) {
-          result = current_cell;
+    while (~ stack.is_null()) {
+        slice s = stack~pop_back().begin_parse();
+        
+        repeat (s.slice_refs()) {
+            stack~push_back(s~load_ref());
         }
-        elseif(builder_depth(result) == 1) {
-          store_maybe_ref(result, current_cell.end_cell());
-        }
-        else {
-          slice result_s = result.end_cell().begin_parse();
-          int result_size = slice_bits(result_s);
-          builder new_result = begin_cell().store_uint(result_s.skip_bits(result_size).preload_uint(result_size), result_size);
-          repeat(slice_refs(result_s)) {
-            new_result = new_result.store_ref(result_s~load_ref());
-          }
-          new_result = new_result.store_ref(current_cell.end_cell());
-          result = new_result;
-        }
-        current_cell = begin_cell();
-        current_cell.store_uint(written_value.skip_bits(counter).preload_uint(1), 1);
-        pushed_to_cell = 0;
-      }
+        
+        int bitNum = 0;
+        int maxLen = s.slice_bits();
+        int sizePrev = prevBlock.slice_bits();
+        int BitNumprev = 0;
+        while (~ s.slice_empty?() ){
+                   
+            while (~ prevBlock.slice_empty?()){ ;;reading prev block
+                int readPrev = prevBlock.preload_uint(sizePrev - BitNumprev);
+                int readNew = s.preload_uint(lenFlag - (sizePrev - BitNumprev));
+                int read = (readPrev << ( lenFlag - (sizePrev - BitNumprev) ) ) + readNew;
+                if (read == flag){
+                    prevBlock~skip_bits(sizePrev - BitNumprev);
+                    s~skip_bits(lenFlag - (sizePrev - BitNumprev));
+                    bitNum += (lenFlag - (sizePrev - BitNumprev));
 
-      pushed_to_cell += 1;
-      counter += 1;
-    }
-  }
+                    (stack_res, StackLen) = AddBits(stack_res,StackLen,value,lenValue);
+                } else {
+                    BitNumprev += 1;
+                    (stack_res, StackLen) = AddBits(stack_res, StackLen, prevBlock~load_uint(1) ,1);
+                }
+            }
+            
+            if (maxLen - bitNum >= lenFlag){;; reading new block
+                int read = s.preload_uint(lenFlag);
+                
+                if (read == flag){
+                    bitNum += lenFlag;
+                    s~skip_bits(lenFlag);
 
-  ;; add last cell, if it's not empty
-  if(~ slice_data_empty?(current_cell.end_cell().begin_parse())) {
-    slice result_s = result.end_cell().begin_parse();
-    int result_size = slice_bits(result_s);
-    builder new_result = begin_cell().store_uint(result_s.skip_bits(result_size).preload_uint(result_size), result_size);
-    repeat(slice_refs(result_s)) {
-      new_result = new_result.store_ref(result_s~load_ref());
+                    (stack_res, StackLen) = AddBits(stack_res, StackLen ,value,lenValue);
+                    
+                } else {
+                    bitNum += 1;
+
+                    
+                    (stack_res, StackLen) = AddBits(stack_res, StackLen, s~load_uint(1) ,1);
+                }
+                
+            } else { ;;block cant be read till end, leaving it for nex cycle
+                
+                prevBlock = s;
+                s~skip_bits(maxLen - bitNum);
+            }
+
+        }
+        
     }
-    new_result = new_result.store_ref(current_cell.end_cell());
-    result = new_result;
-  }
-  return result.end_cell();
+    int sizePrev = prevBlock.slice_bits();
+    if (sizePrev != 0){
+        ;;int t = prevBlock~load_uint(sizePrev);
+        (stack_res, StackLen) = AddBits(stack_res, StackLen ,prevBlock~load_uint(sizePrev) , sizePrev);
+    }
+
+    if (b.builder_bits() != 0){
+        stack_res = b.cons(stack_res);
+        StackLen += 1;
+    }
+    if (StackLen  == 0){
+        return begin_cell().end_cell();
+    }
+    
+    cell temp = null();
+    if (StackLen == 1){
+        builder bldr = stack_res~list_next();
+        cell result = bldr.end_cell();
+        return result;
+    }
+    while (StackLen != 1){
+        StackLen -= 1;
+        if (temp.is_null()) {
+            temp = stack_res~list_next().end_cell();
+        } else {
+            cell newCell = stack_res~list_next().store_ref(temp).end_cell();
+            temp = newCell;
+        }
+    }
+    cell result = stack_res~list_next().store_ref(temp).end_cell();
+
+ 
+    return result;
 }
