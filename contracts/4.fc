@@ -1,38 +1,143 @@
-
 {-
   TASK 4 - Caesar Cipher
   Implement a Caesar cipher encryption and decryption functions.
-  The input is a string (https://docs.ton.org/develop/smart-contracts/guidelines/internal-messages#simple-message-with-comment)
-  where the text is encrypted in a cell (after 32bit 00000000 prefix flag), the algorithm rotates the characters and the last ASCII
-  character should go to the beginning. Return new text encoded in cell.
+  The input is a string_bing (https://docs.ton.org/develop/smart-contracts/guidelines/internal-messages#simple-message-with-comment)
+  where the text is encrypted in a cell (after 32bit 00000000 prefix flag), the algorithm rotates the characteracters and the last ASCII
+  characteracter should go to the beginning. Return new text encoded in cell.
 -}
 
-
-
-(slice, ()) ~skip_bits(slice s, int len) asm "SDSKIPFIRST";
-
 () recv_internal() {
+}
+
+forall X -> int is_null (X x) asm "ISNULL";
+(int) tlen (tuple t) asm "TLEN";
+forall X -> (tuple, ()) push_back (tuple tail, X head) asm "CONS";
+forall X -> (tuple, (X)) pop_back (tuple t) asm "UNCONS";
+forall X -> (tuple, X) list_next(tuple list) asm( -> 1 0) "UNCONS";
+forall X -> tuple cons(X head, tuple tail) asm "CONS";
+
+;; testable
+(slice) encrypt (slice input_slice, int shift_quant) {
+  builder string_b = begin_cell();
+  while (~ input_slice.slice_empty?()) {
+    int character = input_slice~load_uint(8);
+    if ((character >= 97) & (character <= 122)) {
+      string_b~store_uint(((character - 97 + shift_quant) % 26) + 97, 8);
+    }
+    else {
+      if (((character >= 65) & (character <= 90))){
+        string_b~store_uint(((character - 65 + shift_quant) % 26) + 65, 8);
+      }
+      else {
+        string_b~store_uint(character, 8);
+      }
+    }
+  }
+  return string_b.end_cell().begin_parse();
+}
+
+(slice) decrypt (slice input_slice, int shift_quant) {
+  builder string_b = begin_cell();
+  while (~ input_slice.slice_empty?()) {
+    int character = input_slice~load_uint(8);
+    if ((character >= 97) & (character <= 122)) {
+      string_b~store_uint(((character - 97 - shift_quant) % 26) + 97, 8);
+    }
+    else {
+      if (((character >= 65) & (character <= 90))){
+        string_b~store_uint(((character - 65 - shift_quant) % 26) + 65, 8);
+      } 
+      else {
+        string_b~store_uint(character, 8);
+      }
+    }
+  }
+  return string_b.end_cell().begin_parse();
+}
+
+(cell) stringTail(tuple input_stack, int slices_num){
+  cell temp_c = begin_cell().end_cell();
+  if (slices_num == 1){
+    slice next_s = input_stack~list_next();
+    return begin_cell().store_uint(0, 32).store_slice(next_s).end_cell();
+  }
+  while (slices_num != 1){
+    if (temp_c.is_null()) {
+      slice next_s = input_stack~list_next();
+      temp_c = begin_cell().store_slice(next_s).end_cell();
+    }
+    else {
+      cell new_c = begin_cell().store_slice(input_stack~list_next()).store_ref(temp_c).end_cell();
+      temp_c = new_c;
+    }
+    slices_num -= 1;
+  }
+  cell res_c = begin_cell().store_uint(0,32).store_slice(input_stack~list_next()).store_ref(temp_c).end_cell();
+  return res_c;
 }
 
 ;; testable
 (cell) caesar_cipher_encrypt(int shift, cell text) method_id {
 
-  slice message = text.begin_parse();
-  message~skip_bits(32);
+  int shift_quant = shift % 26;
 
+  tuple input_stack = null();
 
-  builder string = begin_cell();
-  
-  while (~ message.slice_empty?()) {
-    int char = (message~load_uint(8) + shift) % 256;
-    string~store_uint(char, 8);
+  tuple stack = null();
+
+  stack~push_back(text);
+
+  int b = 0;
+  int slices_num = 0;
+  while (~ stack.is_null()) {
+
+    slice s = stack~pop_back().begin_parse();
+    if (b == 0){
+      s~skip_bits(32);
+      b += 1;
+    }
+    repeat (s.slice_refs()) {
+      stack~push_back(s~load_ref());
+    }
+    slice s_encr = encrypt(s, shift_quant);
+    input_stack = s_encr.cons(input_stack);
+    slices_num += 1;
+    ;;    input_stack~cons(temp_c);
   }
+  return stringTail(input_stack, slices_num);
 
-  return string.end_cell();
 }
+
 
 ;; testable
 (cell) caesar_cipher_decrypt(int shift, cell text) method_id {
-  return begin_cell().end_cell();
+
+  int shift_quant = shift % 26;
+
+  tuple input_stack = null();
+
+  tuple stack = null();
+
+  stack~push_back(text);
+
+  int b = 0;
+  int slices_num = 0;
+  while (~ stack.is_null()) {
+
+    slice s = stack~pop_back().begin_parse();
+    if (b == 0){
+      s~skip_bits(32);
+      b += 1;
+    }
+    repeat (s.slice_refs()) {
+      stack~push_back(s~load_ref());
+    }
+    slice s_encr = decrypt(s, shift_quant);
+    input_stack = s_encr.cons(input_stack);
+    slices_num += 1;
+    ;;    input_stack~cons(temp_c);
+  }
+  return stringTail(input_stack, slices_num);
+
 }
 
