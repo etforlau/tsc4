@@ -8,11 +8,14 @@
 
 () recv_internal() {
 }
+
 forall X -> int is_null (X x) asm "ISNULL";
 (int) tlen (tuple t) asm "TLEN";
 forall X -> (tuple, ()) push_back (tuple tail, X head) asm "CONS";
 forall X -> (tuple, (X)) pop_back (tuple t) asm "UNCONS";
 forall X -> (tuple, X) list_next(tuple list) asm( -> 1 0) "UNCONS";
+forall X -> tuple cons(X head, tuple tail) asm "CONS";
+
 (slice) encrypt (slice s, int shift_amount) {
   builder str = begin_cell();
   while (~ s.slice_empty?()) {
@@ -69,69 +72,64 @@ forall X -> (tuple, X) list_next(tuple list) asm( -> 1 0) "UNCONS";
 }
 
 ;; testable
-;; testable
-forall X -> tuple cons(X head, tuple tail) asm "CONS";
 (cell) caesar_cipher_encrypt(int shift, cell text) method_id {
+  if ((shift == 0) | (cell_null?(text))) {
+    return text;
+  }
 
   int shift_amount = shift % 26;
-
   tuple stack_res = null();
-
   tuple stack = null();
-
   stack~push_back(text);
-
   int b = 0;
   int numSlices = 0;
-  while (~ stack.is_null()) {
 
+  while (~ stack.is_null()) {
     slice s = stack~pop_back().begin_parse();
     if (b == 0){
       s~skip_bits(32);
       b += 1;
     }
+
     repeat (s.slice_refs()) {
       stack~push_back(s~load_ref());
     }
+    
     slice s_encr = encrypt(s, shift_amount);
     stack_res = s_encr.cons(stack_res);
     numSlices += 1;
-    ;;    stack_res~cons(temp);
   }
   return stringTail(stack_res, numSlices);
-
 }
-
 
 ;; testable
 (cell) caesar_cipher_decrypt(int shift, cell text) method_id {
+  if ((shift == 0) | (cell_null?(text))) {
+    return text;
+  }
 
   int shift_amount = shift % 26;
-
   tuple stack_res = null();
-
   tuple stack = null();
-
   stack~push_back(text);
-
   int b = 0;
   int numSlices = 0;
-  while (~ stack.is_null()) {
 
+  while (~ stack.is_null()) {
     slice s = stack~pop_back().begin_parse();
     if (b == 0){
       s~skip_bits(32);
       b += 1;
     }
+
     repeat (s.slice_refs()) {
       stack~push_back(s~load_ref());
     }
+
     slice s_encr = decrypt(s, shift_amount);
     stack_res = s_encr.cons(stack_res);
     numSlices += 1;
-    ;;    stack_res~cons(temp);
   }
   return stringTail(stack_res, numSlices);
-
 }
 
