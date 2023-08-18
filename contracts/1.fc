@@ -15,22 +15,17 @@ forall X -> (tuple, (X)) pop_back (tuple t) asm "UNCONS";
 
 ;; testable
 (cell) find_branch_by_hash(int hash, cell tree) method_id {
-
-  tuple stack = null();
-  stack~push_back(tree);
-  while (~ stack.is_null()) {
-    cell c = stack~pop_back();
-
-    if(hash == c.cell_hash()) {
-      return c;
+  tuple s = null();
+  s~push_back(tree);
+  while (~ s.is_null()) {
+    cell cell_s = s~pop_back();
+    if(hash == cell_s.cell_hash()) {
+      return cell_s;
     }
-
-    slice s = c.begin_parse();
-
+    slice slice_c = cell_s.begin_parse();
     repeat (s.slice_refs()) {
-      stack~push_back(s~load_ref());
+      s~push_back(slice_c~load_ref());
     }
   }
-
   return begin_cell().end_cell();
 }
