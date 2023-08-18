@@ -15,6 +15,9 @@
 ;; testable
 (int) tlen (tuple t) asm "TLEN";
 (tuple) matrix_multiplier(tuple matrixA, tuple matrixB) method_id {
+  if ((matrixA.tlen() == 0) | (matrixB.tlen() == 0)) {
+    return empty_tuple();
+  }
   int a_rows = matrixA.tlen();
   int b_rows = matrixB.tlen();
   int a_cols = matrixA.at(0).tlen();
