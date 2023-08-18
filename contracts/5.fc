@@ -19,29 +19,28 @@
 ;; testable
 (tuple) fibonacci_sequence (int n, int k) method_id {
 
-  tuple result = empty_tuple();
+  if((n == 0) | (k == 0)) {
+    return empty_tuple();
+  }
 
+  tuple res = empty_tuple();
   int term_0 = 0;
   int term_1 = 1;
-  int counter = 0;
+  int c = 0;
   int newTerm = 0;
 
-  while(counter < n + k) {
-    if (counter >= n) {
-      result~tpush(term_0);
+  while(c < n + k) {
+    if (c >= n) {
+      res~tpush(term_0);
     }
 
-
-    if(counter < n + k - 2){
+    if(c < n + k - 2){
       newTerm = term_0 + term_1;
     }
 
     term_0 = term_1;
     term_1 = newTerm;
-
-    counter += 1;
+    c += 1;
   }
-  return result;
+  return res;
 }
-
-
